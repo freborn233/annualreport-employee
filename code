@@ -1,0 +1,62 @@
+import tabula
+import pdfplumber
+import pandas as pd
+import numpy as np
+import PyPDF2
+import re
+
+def delete_nullrow (table,percentage):
+    table = table.fillna('')
+    row_sum = table.apply(lambda x: sum(x== '')/len(x) ,axis = 0)
+    row_null = row_sum[row_sum>percentage].index.to_list()
+    table = table.drop(row_null ,axis = 1)
+    return table
+    
+ path = r""
+ 
+ # Open the pdf file
+object = PyPDF2.PdfFileReader(path)
+
+# Get number of pages
+NumPages = object.getNumPages()
+
+# Enter code here
+String = "分支机构基本情况"
+
+# Extract text and do the search
+n = list()
+for i in range(0, NumPages):
+    PageObj = object.getPage(i)
+    Text = PageObj.extractText()
+    if re.search(String,Text):
+        n.append(i)
+        
+pdf = pdfplumber.open(path)
+#提取第一页
+p0 = pdf.pages[n[0]]
+table0 = p0.extract_tables(table_settings={"vertical_strategy": "text"
+                                        ,"horizontal_strategy": "lines"})
+t0 = pd.DataFrame(table0[0])
+
+str0 = '机构名称'#具体情况看年报
+for row in t0.itertuples():
+    if str0 in list(row):
+        ind = list(row)[0]
+        break
+
+t0_p = t0.iloc[ind:,:].reset_index(drop = True)#选取要的行
+t0_notnull = delete_nullrow(t0_p,0.3)#删除多数为空行的列
+
+#提取第二页
+p1 = pdf.pages[n[0]+1]
+table1 = p1.extract_table(table_settings={"vertical_strategy": "text"
+                                        ,"horizontal_strategy": "lines"
+                                        , "intersection_tolerance": 15})
+t1 = pd.DataFrame(table1)
+t1_notnull = delete_nullrow(t1,0.3)
+
+writer = pd.ExcelWriter(r"",mode = 'a',engine='openpyxl',if_sheet_exists='new')#创建excel文件
+
+pd.concat([t0_notnull,t1_notnull]).reset_index(drop = True).to_excel(writer,sheet_name="2021",index = False,header = False)#把数据放到相应的excel
+writer.save()
+writer.close()
